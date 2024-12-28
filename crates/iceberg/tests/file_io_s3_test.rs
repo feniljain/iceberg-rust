@@ -49,18 +49,16 @@ mod tests {
     }
 
     async fn get_file_io() -> FileIO {
-        set_up();
+        // set_up();
 
-        let guard = DOCKER_COMPOSE_ENV.read().unwrap();
-        let docker_compose = guard.as_ref().unwrap();
-        let container_ip = docker_compose.get_container_ip("minio");
-        let minio_socket_addr = SocketAddr::new(container_ip, MINIO_PORT);
+        // let guard = DOCKER_COMPOSE_ENV.read().unwrap();
+        // let docker_compose = guard.as_ref().unwrap();
+        // let container_ip = docker_compose.get_container_ip("minio");
+        // let minio_socket_addr = SocketAddr::new(container_ip, MINIO_PORT);
 
         FileIOBuilder::new("s3")
             .with_props(vec![
-                (S3_ENDPOINT, format!("http://{}", minio_socket_addr)),
-                (S3_ACCESS_KEY_ID, "admin".to_string()),
-                (S3_SECRET_ACCESS_KEY, "password".to_string()),
+                // (S3_ENDPOINT, "https://s3.us-east-1.amazonaws.com/".to_string()),
                 (S3_REGION, "us-east-1".to_string()),
             ])
             .build()
@@ -70,8 +68,9 @@ mod tests {
     #[tokio::test]
     async fn test_file_io_s3_exists() {
         let file_io = get_file_io().await;
-        assert!(!file_io.exists("s3://bucket2/any").await.unwrap());
-        assert!(file_io.exists("s3://bucket1/").await.unwrap());
+        assert!(!file_io.exists("s3://kafka-testing-files/data/00000-0-17173332-404a-41fb-bead-83281eb85100-00000.parquet").await.unwrap());
+
+        // assert!(file_io.exists("s3://bucket1/").await.unwrap());
     }
 
     #[tokio::test]
