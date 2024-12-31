@@ -512,6 +512,8 @@ impl Catalog for HmsCatalog {
             ));
         }
 
+        println!("FENIL::table exists");
+
         // load table
         let iceberg_table = self.load_table(&identifier).await?;
 
@@ -526,10 +528,14 @@ impl Catalog for HmsCatalog {
             update_table_metadata_builder = table_update.apply(update_table_metadata_builder)?;
         }
 
+        println!("FENIL::applied table updates");
+
         // check table requirements
         for table_requirement in requirements {
             table_requirement.check(Some(iceberg_table.metadata()))?;
         }
+
+        println!("FENIL::checked table requirements");
 
         // write new metadata file
         let location = iceberg_table.metadata().location();
@@ -539,6 +545,8 @@ impl Catalog for HmsCatalog {
         let update_table_metadata = update_table_metadata_builder.build()?;
         file.write(serde_json::to_vec(&update_table_metadata.metadata)?.into())
             .await?;
+
+        println!("FENIL::wrote table metadata");
 
         let db_name = validate_namespace(iceberg_table.identifier().namespace())?;
         let tbl_name = iceberg_table.identifier().clone().name().to_string();
@@ -552,6 +560,8 @@ impl Catalog for HmsCatalog {
             new_metadata_location.to_string(),
             update_table_metadata.metadata.properties(),
         )?;
+
+        println!("FENIL::converted to hive table");
 
         // run alter table on hive
         self.client

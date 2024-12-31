@@ -19,15 +19,24 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
+use arrow_array::{ArrayRef, Int32Array, RecordBatch, StringArray};
 use ctor::{ctor, dtor};
 use iceberg::io::{S3_ACCESS_KEY_ID, S3_ENDPOINT, S3_REGION, S3_SECRET_ACCESS_KEY};
 use iceberg::spec::{NestedField, PrimitiveType, Schema, Type};
+use iceberg::transaction::Transaction;
+use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
+use iceberg::writer::file_writer::location_generator::{
+    DefaultFileNameGenerator, DefaultLocationGenerator,
+};
+use iceberg::writer::file_writer::ParquetWriterBuilder;
+use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use iceberg::{Catalog, Namespace, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_catalog_hms::{HmsCatalog, HmsCatalogConfig, HmsThriftTransport};
 use iceberg_test_utils::docker::DockerCompose;
 use iceberg_test_utils::{normalize_test_name, set_up};
+use parquet::file::properties::WriterProperties;
 use port_scanner::scan_port_addr;
 use tokio::time::sleep;
 
@@ -364,6 +373,65 @@ async fn test_drop_namespace() -> Result<()> {
 
     let result = catalog.namespace_exists(ns.name()).await?;
     assert!(!result);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_update_table() -> Result<()> {
+    let catalog = get_catalog().await;
+    let creation = set_table_creation("s3a://warehouse/hive", "my_table")?;
+    let namespace = Namespace::new(NamespaceIdent::new("test_load_table".into()));
+    set_test_namespace(&catalog, namespace.name()).await?;
+
+    let table = catalog.create_table(namespace.name(), creation).await?;
+
+    // =====================
+
+    let schema: Arc<arrow_schema::Schema> = Arc::new(
+        table
+            .metadata()
+            .current_schema()
+            .as_ref()
+            .try_into()
+            .unwrap(),
+    );
+
+    let location_generator = DefaultLocationGenerator::new(table.metadata().clone()).unwrap();
+    let file_name_generator = DefaultFileNameGenerator::new(
+        "test".to_string(),
+        None,
+        iceberg::spec::DataFileFormat::Parquet,
+    );
+
+    let parquet_writer_builder = ParquetWriterBuilder::new(
+        WriterProperties::default(),
+        table.metadata().current_schema().clone(),
+        table.file_io().clone(),
+        location_generator.clone(),
+        file_name_generator.clone(),
+    );
+
+    let data_file_writer_builder = DataFileWriterBuilder::new(parquet_writer_builder, None);
+    let mut data_file_writer = data_file_writer_builder.build().await.unwrap();
+    let col1 = Int32Array::from(vec![Some(0), Some(1), Some(2)]);
+    let col2 = StringArray::from(vec![Some("foo"), Some("bar"), Some("baz")]);
+    let batch = RecordBatch::try_new(schema.clone(), vec![
+        Arc::new(col1) as ArrayRef,
+        Arc::new(col2) as ArrayRef,
+    ])
+    .unwrap();
+
+    data_file_writer.write(batch.clone()).await.unwrap();
+    let data_file = data_file_writer.close().await.unwrap();
+
+    let tx = Transaction::new(&table);
+    let mut append_action = tx.fast_append(None, vec![]).unwrap();
+    append_action.add_data_files(data_file.clone()).unwrap();
+    let tx = append_action.apply().await.unwrap();
+    let _ = tx.commit(&catalog).await.unwrap();
+
+    // =====================
 
     Ok(())
 }

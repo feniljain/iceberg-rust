@@ -46,3 +46,6 @@ volo-thrift = { workspace = true }
 ctor = { workspace = true }
 iceberg_test_utils = { path = "../../test_utils", features = ["tests"] }
 port_scanner = { workspace = true }
+parquet = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
