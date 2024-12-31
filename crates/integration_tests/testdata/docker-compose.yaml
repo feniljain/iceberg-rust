@@ -83,3 +83,13 @@ services:
     links:
       - rest:rest
       - minio:minio
+
+  hive-metastore:
+    image: iceberg-hive-metastore
+    build: hms/
+    platform: ${DOCKER_DEFAULT_PLATFORM}
+    expose:
+      - 9083
+    environment:
+      SERVICE_NAME: "metastore"
+      SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://warehouse/hive/"

@@ -48,7 +48,7 @@ async fn test_append_data_file() {
     );
 
     fixture
-        .rest_catalog
+        .hms_catalog
         .create_namespace(ns.name(), ns.properties().clone())
         .await
         .unwrap();
@@ -70,7 +70,7 @@ async fn test_append_data_file() {
         .build();
 
     let table = fixture
-        .rest_catalog
+        .hms_catalog
         .create_table(ns.name(), table_creation)
         .await
         .unwrap();
@@ -137,7 +137,7 @@ async fn test_append_data_file() {
     let mut append_action = tx.fast_append(None, vec![]).unwrap();
     append_action.add_data_files(data_file.clone()).unwrap();
     let tx = append_action.apply().await.unwrap();
-    let table = tx.commit(&fixture.rest_catalog).await.unwrap();
+    let table = tx.commit(&fixture.hms_catalog).await.unwrap();
 
     // check result
     let batch_stream = table
@@ -157,7 +157,7 @@ async fn test_append_data_file() {
     let mut append_action = tx.fast_append(None, vec![]).unwrap();
     append_action.add_data_files(data_file.clone()).unwrap();
     let tx = append_action.apply().await.unwrap();
-    let table = tx.commit(&fixture.rest_catalog).await.unwrap();
+    let table = tx.commit(&fixture.hms_catalog).await.unwrap();
 
     // check result again
     let batch_stream = table

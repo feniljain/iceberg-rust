@@ -3042,9 +3042,12 @@ dependencies = [
  "arrow-schema",
  "futures",
  "iceberg",
+ "iceberg-catalog-hms",
  "iceberg-catalog-rest",
  "iceberg_test_utils",
+ "log",
  "parquet",
+ "port_scanner",
  "tokio",
 ]
 
