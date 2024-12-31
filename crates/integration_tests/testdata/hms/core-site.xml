@@ -18,7 +18,7 @@
 <configuration>
     <property>
         <name>fs.defaultFS</name>
-        <value>s3a://warehouse/hive</value>
+        <value>s3a://icebergdata/hive</value>
     </property>
     <property>
         <name>fs.s3a.impl</name>

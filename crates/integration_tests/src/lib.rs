@@ -16,7 +16,7 @@
 // under the License.
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread::sleep;
 
 use iceberg::io::{S3_ACCESS_KEY_ID, S3_ENDPOINT, S3_REGION, S3_SECRET_ACCESS_KEY};
@@ -28,6 +28,7 @@ use port_scanner::scan_port_addr;
 
 const REST_CATALOG_PORT: u16 = 8181;
 const HMS_CATALOG_PORT: u16 = 9083;
+const MINIO_PORT: u16 = 9000;
 
 pub struct TestFixture {
     pub _docker_compose: DockerCompose,
@@ -46,15 +47,18 @@ pub async fn set_test_fixture(func: &str) -> TestFixture {
     docker_compose.run();
 
     let rest_catalog_ip = docker_compose.get_container_ip("rest");
-    let hms_catalog_ip = docker_compose.get_container_ip("hive-metastore");
+    // let hms_catalog_ip = docker_compose.get_container_ip("hive-metastore");
     let minio_ip = docker_compose.get_container_ip("minio");
+
+    let hms_ip = Ipv4Addr::new(44, 196, 250, 225);
+    let hms_socket_addr = SocketAddr::new(IpAddr::V4(hms_ip), 9083);
 
     let config = RestCatalogConfig::builder()
         .uri(format!("http://{}:{}", rest_catalog_ip, REST_CATALOG_PORT))
         .props(HashMap::from([
             (
                 S3_ENDPOINT.to_string(),
-                format!("http://{}:{}", minio_ip, 9000),
+                format!("http://{}:{}", minio_ip, MINIO_PORT),
             ),
             (S3_ACCESS_KEY_ID.to_string(), "admin".to_string()),
             (S3_SECRET_ACCESS_KEY.to_string(), "password".to_string()),
@@ -63,31 +67,41 @@ pub async fn set_test_fixture(func: &str) -> TestFixture {
         .build();
     let rest_catalog = RestCatalog::new(config);
 
-    let hms_socket_addr = SocketAddr::new(hms_catalog_ip, HMS_CATALOG_PORT);
-    while !scan_port_addr(hms_socket_addr) {
-        log::info!("scan hms_socket_addr {} check", hms_socket_addr);
-        log::info!("Waiting for 1s hms catalog to ready...");
-        sleep(std::time::Duration::from_millis(1000));
-    }
+    println!("FENIL::rest catalog created");
 
-    let props = HashMap::from([
-        (
-            S3_ENDPOINT.to_string(),
-            format!("http://{}", minio_ip),
-        ),
-        (S3_ACCESS_KEY_ID.to_string(), "admin".to_string()),
-        (S3_SECRET_ACCESS_KEY.to_string(), "password".to_string()),
-        (S3_REGION.to_string(), "us-east-1".to_string()),
-    ]);
+    // let hms_socket_addr = SocketAddr::new(hms_ip, HMS_CATALOG_PORT);
+    // while !scan_port_addr(hms_socket_addr) {
+    //     println!("scan hms_socket_addr {} check", hms_socket_addr);
+    //     println!("Waiting for 1s hms catalog to ready...");
+    //     sleep(std::time::Duration::from_millis(1000));
+    // }
 
-    let config = HmsCatalogConfig::builder()
+    let warehouse = String::from("s3a://kafka-testing-files/iceberg_hive_test");
+    // let namespace = String::from("risingwave_iceberg_hive");
+
+    let catalog_config = HmsCatalogConfig::builder()
         .address(hms_socket_addr.to_string())
+        .warehouse(warehouse)
         .thrift_transport(HmsThriftTransport::Buffered)
-        .warehouse("s3a://warehouse/hive".to_string())
-        .props(props)
+        .props(HashMap::from([
+            (
+                "s3.endpoint".to_string(),
+                "https://s3.us-east-1.amazonaws.com/".to_string(),
+            ),
+            ("s3.region".to_string(), "us-east-1".to_string()),
+            // (
+            //     "s3.access-key-id".to_string(),
+            //     "asdf".to_string(),
+            // ),
+            // (
+            //     "s3.secret-access-key".to_string(),
+            //     "adfad".to_string(),
+            // ),
+        ]))
         .build();
+    let hms_catalog = HmsCatalog::new(catalog_config).expect("could not build HMS catalog");
 
-    let hms_catalog = HmsCatalog::new(config).expect("could not build HMS catalog");
+    println!("FENIL::HMS catalog created");
 
     TestFixture {
         _docker_compose: docker_compose,

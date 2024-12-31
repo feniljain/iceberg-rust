@@ -92,4 +92,4 @@ services:
       - 9083
     environment:
       SERVICE_NAME: "metastore"
-      SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://warehouse/hive/"
+      SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://icebergdata/hive/"

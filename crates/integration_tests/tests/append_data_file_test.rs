@@ -39,19 +39,22 @@ use parquet::file::properties::WriterProperties;
 async fn test_append_data_file() {
     let fixture = set_test_fixture("test_create_table").await;
 
-    let ns = Namespace::with_properties(
-        NamespaceIdent::from_strs(["apple", "ios"]).unwrap(),
-        HashMap::from([
-            ("owner".to_string(), "ray".to_string()),
-            ("community".to_string(), "apache".to_string()),
-        ]),
-    );
+    let namespace_id = NamespaceIdent::new(String::from("risingwave_iceberg_hive"));
 
-    fixture
-        .hms_catalog
-        .create_namespace(ns.name(), ns.properties().clone())
-        .await
-        .unwrap();
+    // let ns = Namespace::with_properties(
+    //     NamespaceIdent::from_strs(["apple", "ios"]).unwrap(),
+    //     HashMap::from([
+    //         ("owner".to_string(), "ray".to_string()),
+    //         ("community".to_string(), "apache".to_string()),
+    //     ]),
+    // );
+    //
+    // fixture
+    //     .hms_catalog
+    //     .create_namespace(ns.name(), ns.properties().clone())
+    //     .await
+    //     .unwrap();
+    //
 
     let schema = Schema::builder()
         .with_schema_id(1)
@@ -67,11 +70,12 @@ async fn test_append_data_file() {
     let table_creation = TableCreation::builder()
         .name("t1".to_string())
         .schema(schema.clone())
+        .location("s3a://kafka-testing-files/iceberg_hive_test".to_string())
         .build();
 
     let table = fixture
         .hms_catalog
-        .create_table(ns.name(), table_creation)
+        .create_table(&namespace_id, table_creation)
         .await
         .unwrap();
 
