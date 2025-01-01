@@ -21,6 +21,11 @@ services:
     expose:
       - 9000
       - 9001
+    networks:
+      - iceberg_hms_test
+    ports:
+      - 9000:9000
+      - 9001:9001
     environment:
       - MINIO_ROOT_USER=admin
       - MINIO_ROOT_PASSWORD=password
@@ -30,6 +35,8 @@ services:
   mc:
     depends_on:
       - minio
+    networks:
+      - iceberg_hms_test
     image: minio/mc:RELEASE.2024-03-07T00-31-49Z
     environment:
       - AWS_ACCESS_KEY_ID=admin
@@ -44,6 +51,14 @@ services:
     platform: ${DOCKER_DEFAULT_PLATFORM}
     expose:
       - 9083
+    ports:
+      - 9083:9083
     environment:
       SERVICE_NAME: "metastore"
       SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://warehouse/hive/"
+    networks:
+      - iceberg_hms_test
+
+networks:
+  iceberg_hms_test:
+    external: true

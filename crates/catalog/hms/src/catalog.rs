@@ -539,7 +539,10 @@ impl Catalog for HmsCatalog {
 
         // write new metadata file
         let location = iceberg_table.metadata().location();
-        let new_metadata_location = create_metadata_location(&location, 0)?;
+        let new_metadata_location = create_metadata_location(
+            &location,
+            iceberg_table.metadata().next_sequence_number() as i32,
+        )?;
 
         let file = self.file_io.new_output(&new_metadata_location)?;
         let update_table_metadata = update_table_metadata_builder.build()?;
