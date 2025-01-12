@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/iceberg/src/metadata_scan.rs`."><title>metadata_scan.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="iceberg" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (a70b2ae57 2024-06-09)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/iceberg/src/inspect/snapshots.rs`."><title>snapshots.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="iceberg" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (a70b2ae57 2024-06-09)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -187,73 +187,6 @@
 <a href="#187" id="187">187</a>
 <a href="#188" id="188">188</a>
 <a href="#189" id="189">189</a>
-<a href="#190" id="190">190</a>
-<a href="#191" id="191">191</a>
-<a href="#192" id="192">192</a>
-<a href="#193" id="193">193</a>
-<a href="#194" id="194">194</a>
-<a href="#195" id="195">195</a>
-<a href="#196" id="196">196</a>
-<a href="#197" id="197">197</a>
-<a href="#198" id="198">198</a>
-<a href="#199" id="199">199</a>
-<a href="#200" id="200">200</a>
-<a href="#201" id="201">201</a>
-<a href="#202" id="202">202</a>
-<a href="#203" id="203">203</a>
-<a href="#204" id="204">204</a>
-<a href="#205" id="205">205</a>
-<a href="#206" id="206">206</a>
-<a href="#207" id="207">207</a>
-<a href="#208" id="208">208</a>
-<a href="#209" id="209">209</a>
-<a href="#210" id="210">210</a>
-<a href="#211" id="211">211</a>
-<a href="#212" id="212">212</a>
-<a href="#213" id="213">213</a>
-<a href="#214" id="214">214</a>
-<a href="#215" id="215">215</a>
-<a href="#216" id="216">216</a>
-<a href="#217" id="217">217</a>
-<a href="#218" id="218">218</a>
-<a href="#219" id="219">219</a>
-<a href="#220" id="220">220</a>
-<a href="#221" id="221">221</a>
-<a href="#222" id="222">222</a>
-<a href="#223" id="223">223</a>
-<a href="#224" id="224">224</a>
-<a href="#225" id="225">225</a>
-<a href="#226" id="226">226</a>
-<a href="#227" id="227">227</a>
-<a href="#228" id="228">228</a>
-<a href="#229" id="229">229</a>
-<a href="#230" id="230">230</a>
-<a href="#231" id="231">231</a>
-<a href="#232" id="232">232</a>
-<a href="#233" id="233">233</a>
-<a href="#234" id="234">234</a>
-<a href="#235" id="235">235</a>
-<a href="#236" id="236">236</a>
-<a href="#237" id="237">237</a>
-<a href="#238" id="238">238</a>
-<a href="#239" id="239">239</a>
-<a href="#240" id="240">240</a>
-<a href="#241" id="241">241</a>
-<a href="#242" id="242">242</a>
-<a href="#243" id="243">243</a>
-<a href="#244" id="244">244</a>
-<a href="#245" id="245">245</a>
-<a href="#246" id="246">246</a>
-<a href="#247" id="247">247</a>
-<a href="#248" id="248">248</a>
-<a href="#249" id="249">249</a>
-<a href="#250" id="250">250</a>
-<a href="#251" id="251">251</a>
-<a href="#252" id="252">252</a>
-<a href="#253" id="253">253</a>
-<a href="#254" id="254">254</a>
-<a href="#255" id="255">255</a>
-<a href="#256" id="256">256</a>
 </pre></div><pre class="rust"><code><span class="comment">// Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -271,52 +204,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
-</span><span class="doccomment">//! Metadata table api.
-
 </span><span class="kw">use </span>std::sync::Arc;
 
 <span class="kw">use </span>arrow_array::builder::{MapBuilder, PrimitiveBuilder, StringBuilder};
 <span class="kw">use </span>arrow_array::types::{Int64Type, TimestampMillisecondType};
 <span class="kw">use </span>arrow_array::RecordBatch;
 <span class="kw">use </span>arrow_schema::{DataType, Field, Schema, TimeUnit};
+<span class="kw">use </span>futures::{stream, StreamExt};
 
-<span class="kw">use </span><span class="kw">crate</span>::spec::TableMetadata;
+<span class="kw">use </span><span class="kw">crate</span>::scan::ArrowRecordBatchStream;
 <span class="kw">use </span><span class="kw">crate</span>::table::Table;
 <span class="kw">use </span><span class="kw">crate</span>::Result;
 
-<span class="doccomment">/// Metadata table is used to inspect a table's history, snapshots, and other metadata as a table.
-///
-/// References:
-/// - &lt;https://github.com/apache/iceberg/blob/ac865e334e143dfd9e33011d8cf710b46d91f1e5/core/src/main/java/org/apache/iceberg/MetadataTableType.java#L23-L39&gt;
-/// - &lt;https://iceberg.apache.org/docs/latest/spark-queries/#querying-with-sql&gt;
-/// - &lt;https://py.iceberg.apache.org/api/#inspecting-tables&gt;
-</span><span class="attr">#[derive(Debug)]
-</span><span class="kw">pub struct </span>MetadataTable(Table);
-
-<span class="kw">impl </span>MetadataTable {
-    <span class="doccomment">/// Creates a new metadata scan.
-    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>new(table: Table) -&gt; <span class="self">Self </span>{
-        <span class="self">Self</span>(table)
-    }
-
-    <span class="doccomment">/// Get the snapshots table.
-    </span><span class="kw">pub fn </span>snapshots(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; SnapshotsTable {
-        SnapshotsTable {
-            metadata_table: <span class="self">self</span>,
-        }
-    }
-
-    <span class="kw">fn </span>metadata(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>TableMetadata {
-        <span class="self">self</span>.<span class="number">0</span>.metadata()
-    }
-}
-
 <span class="doccomment">/// Snapshots table.
 </span><span class="kw">pub struct </span>SnapshotsTable&lt;<span class="lifetime">'a</span>&gt; {
-    metadata_table: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>MetadataTable,
+    table: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Table,
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'a</span>&gt; SnapshotsTable&lt;<span class="lifetime">'a</span>&gt; {
+    <span class="doccomment">/// Create a new Snapshots table instance.
+    </span><span class="kw">pub fn </span>new(table: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Table) -&gt; <span class="self">Self </span>{
+        <span class="self">Self </span>{ table }
+    }
+
     <span class="doccomment">/// Returns the schema of the snapshots table.
     </span><span class="kw">pub fn </span>schema(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Schema {
         Schema::new(<span class="macro">vec!</span>[
@@ -351,7 +261,7 @@
     }
 
     <span class="doccomment">/// Scans the snapshots table.
-    </span><span class="kw">pub fn </span>scan(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;RecordBatch&gt; {
+    </span><span class="kw">pub async fn </span>scan(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;ArrowRecordBatchStream&gt; {
         <span class="kw">let </span><span class="kw-2">mut </span>committed_at =
             PrimitiveBuilder::&lt;TimestampMillisecondType&gt;::new().with_timezone(<span class="string">"+00:00"</span>);
         <span class="kw">let </span><span class="kw-2">mut </span>snapshot_id = PrimitiveBuilder::&lt;Int64Type&gt;::new();
@@ -360,7 +270,7 @@
         <span class="kw">let </span><span class="kw-2">mut </span>manifest_list = StringBuilder::new();
         <span class="kw">let </span><span class="kw-2">mut </span>summary = MapBuilder::new(<span class="prelude-val">None</span>, StringBuilder::new(), StringBuilder::new());
 
-        <span class="kw">for </span>snapshot <span class="kw">in </span><span class="self">self</span>.metadata_table.metadata().snapshots() {
+        <span class="kw">for </span>snapshot <span class="kw">in </span><span class="self">self</span>.table.metadata().snapshots() {
             committed_at.append_value(snapshot.timestamp_ms());
             snapshot_id.append_value(snapshot.snapshot_id());
             parent_id.append_option(snapshot.parent_snapshot_id());
@@ -373,78 +283,34 @@
             summary.append(<span class="bool-val">true</span>)<span class="question-mark">?</span>;
         }
 
-        <span class="prelude-val">Ok</span>(RecordBatch::try_new(Arc::new(<span class="self">self</span>.schema()), <span class="macro">vec!</span>[
+        <span class="kw">let </span>batch = RecordBatch::try_new(Arc::new(<span class="self">self</span>.schema()), <span class="macro">vec!</span>[
             Arc::new(committed_at.finish()),
             Arc::new(snapshot_id.finish()),
             Arc::new(parent_id.finish()),
             Arc::new(operation.finish()),
             Arc::new(manifest_list.finish()),
             Arc::new(summary.finish()),
-        ])<span class="question-mark">?</span>)
+        ])<span class="question-mark">?</span>;
+
+        <span class="prelude-val">Ok</span>(stream::iter(<span class="macro">vec!</span>[<span class="prelude-val">Ok</span>(batch)]).boxed())
     }
 }
 
 <span class="attr">#[cfg(test)]
 </span><span class="kw">mod </span>tests {
-    <span class="kw">use </span>expect_test::{expect, Expect};
-    <span class="kw">use </span>itertools::Itertools;
+    <span class="kw">use </span>expect_test::expect;
 
-    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+    <span class="kw">use </span><span class="kw">crate</span>::inspect::metadata_table::tests::check_record_batches;
     <span class="kw">use </span><span class="kw">crate</span>::scan::tests::TableTestFixture;
 
-    <span class="doccomment">/// Snapshot testing to check the resulting record batch.
-    ///
-    /// - `expected_schema/data`: put `expect![[""]]` as a placeholder,
-    ///   and then run test with `UPDATE_EXPECT=1 cargo test` to automatically update the result,
-    ///   or use rust-analyzer (see [video](https://github.com/rust-analyzer/expect-test)).
-    ///   Check the doc of [`expect_test`] for more details.
-    /// - `ignore_check_columns`: Some columns are not stable, so we can skip them.
-    /// - `sort_column`: The order of the data might be non-deterministic, so we can sort it by a column.
-    </span><span class="kw">fn </span>check_record_batch(
-        record_batch: RecordBatch,
-        expected_schema: Expect,
-        expected_data: Expect,
-        ignore_check_columns: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>str],
-        sort_column: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
-    ) {
-        <span class="kw">let </span><span class="kw-2">mut </span>columns = record_batch.columns().to_vec();
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(sort_column) = sort_column {
-            <span class="kw">let </span>column = record_batch.column_by_name(sort_column).unwrap();
-            <span class="kw">let </span>indices = arrow_ord::sort::sort_to_indices(column, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>).unwrap();
-            columns = columns
-                .iter()
-                .map(|column| arrow_select::take::take(column.as_ref(), <span class="kw-2">&amp;</span>indices, <span class="prelude-val">None</span>).unwrap())
-                .collect_vec();
-        }
-
-        expected_schema.assert_eq(<span class="kw-2">&amp;</span><span class="macro">format!</span>(
-            <span class="string">"{}"</span>,
-            record_batch.schema().fields().iter().format(<span class="string">",\n"</span>)
-        ));
-        expected_data.assert_eq(<span class="kw-2">&amp;</span><span class="macro">format!</span>(
-            <span class="string">"{}"</span>,
-            record_batch
-                .schema()
-                .fields()
-                .iter()
-                .zip_eq(columns)
-                .map(|(field, column)| {
-                    <span class="kw">if </span>ignore_check_columns.contains(<span class="kw-2">&amp;</span>field.name().as_str()) {
-                        <span class="macro">format!</span>(<span class="string">"{}: (skipped)"</span>, field.name())
-                    } <span class="kw">else </span>{
-                        <span class="macro">format!</span>(<span class="string">"{}: {:?}"</span>, field.name(), column)
-                    }
-                })
-                .format(<span class="string">",\n"</span>)
-        ));
-    }
-
-    <span class="attr">#[test]
-    </span><span class="kw">fn </span>test_snapshots_table() {
+    <span class="attr">#[tokio::test]
+    </span><span class="kw">async fn </span>test_snapshots_table() {
         <span class="kw">let </span>table = TableTestFixture::new().table;
-        <span class="kw">let </span>record_batch = table.metadata_table().snapshots().scan().unwrap();
-        check_record_batch(
-            record_batch,
+
+        <span class="kw">let </span>batch_stream = table.inspect().snapshots().scan().<span class="kw">await</span>.unwrap();
+
+        check_record_batches(
+            batch_stream,
             <span class="macro">expect!</span>[[<span class="string">r#"
                 Field { name: "committed_at", data_type: Timestamp(Millisecond, Some("+00:00")), nullable: false, dict_id: 0, dict_is_ordered: false, metadata: {} },
                 Field { name: "snapshot_id", data_type: Int64, nullable: false, dict_id: 0, dict_is_ordered: false, metadata: {} },
@@ -507,7 +373,7 @@
                 ]"#</span>]],
             <span class="kw-2">&amp;</span>[<span class="string">"manifest_list"</span>],
             <span class="prelude-val">Some</span>(<span class="string">"committed_at"</span>),
-        );
+        ).<span class="kw">await</span>;
     }
 }
 </code></pre></div></section></main></body></html>
