@@ -363,6 +363,7 @@ impl Catalog for HmsCatalog {
             location,
             metadata_location.clone(),
             metadata.properties(),
+            Some(vec![]),
         )?;
 
         self.client
@@ -401,6 +402,8 @@ impl Catalog for HmsCatalog {
             .await
             .map(from_thrift_exception)
             .map_err(from_thrift_error)??;
+
+        println!("DEBUG: hive_table: {:?}", hive_table);
 
         let metadata_location = get_metadata_location(&hive_table.parameters)?;
 
@@ -512,15 +515,16 @@ impl Catalog for HmsCatalog {
             ));
         }
 
-        println!("FENIL::table exists");
-
         // load table
         let iceberg_table = self.load_table(&identifier).await?;
+
+        println!("DEBUG::loaded iceberg table: {:?}", iceberg_table);
 
         let requirements = commit.take_requirements();
         let table_updates = commit.take_updates();
 
         let mut update_table_metadata_builder =
+            // TODO: fill in current file location here
             TableMetadataBuilder::new_from_metadata(iceberg_table.metadata().clone(), None);
 
         // apply table updates
@@ -528,19 +532,19 @@ impl Catalog for HmsCatalog {
             update_table_metadata_builder = table_update.apply(update_table_metadata_builder)?;
         }
 
-        println!("FENIL::applied table updates");
+        println!("DEBUG::applied table updates");
 
         // check table requirements
         for table_requirement in requirements {
             table_requirement.check(Some(iceberg_table.metadata()))?;
         }
 
-        println!("FENIL::checked table requirements");
+        println!("DEBUG::checked table requirements");
 
         // write new metadata file
-        let location = iceberg_table.metadata().location();
+        let metadata_location = iceberg_table.metadata().location();
         let new_metadata_location = create_metadata_location(
-            &location,
+            &metadata_location,
             iceberg_table.metadata().next_sequence_number() as i32,
         )?;
 
@@ -549,22 +553,28 @@ impl Catalog for HmsCatalog {
         file.write(serde_json::to_vec(&update_table_metadata.metadata)?.into())
             .await?;
 
-        println!("FENIL::wrote table metadata");
+        println!(
+            "DEBUG::wrote table metadata, {:?} {:?}",
+            new_metadata_location, update_table_metadata
+        );
 
         let db_name = validate_namespace(iceberg_table.identifier().namespace())?;
         let tbl_name = iceberg_table.identifier().clone().name().to_string();
+
+        let tbl_location = iceberg_table.metadata().location();
 
         // convert iceberg table to hive table
         let hive_table_new = convert_to_hive_table(
             db_name.clone(),
             update_table_metadata.metadata.current_schema(),
-            tbl_name.clone(),
-            location.into(),
+            tbl_name.clone().into(),
+            tbl_location.into(),
             new_metadata_location.to_string(),
             update_table_metadata.metadata.properties(),
+            Some(vec![]),
         )?;
 
-        println!("FENIL::converted to hive table");
+        println!("DEBUG::converted to hive table: {:?}", hive_table_new);
 
         // run alter table on hive
         self.client

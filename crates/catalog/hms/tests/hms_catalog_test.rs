@@ -18,7 +18,7 @@
 //! Integration tests for hms catalog.
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, RwLock};
 
 use arrow_array::{ArrayRef, Int32Array, RecordBatch, StringArray};
@@ -45,22 +45,22 @@ const MINIO_PORT: u16 = 9000;
 static DOCKER_COMPOSE_ENV: RwLock<Option<DockerCompose>> = RwLock::new(None);
 type Result<T> = std::result::Result<T, iceberg::Error>;
 
-#[ctor]
-fn before_all() {
-    let mut guard = DOCKER_COMPOSE_ENV.write().unwrap();
-    let docker_compose = DockerCompose::new(
-        normalize_test_name(module_path!()),
-        format!("{}/testdata/hms_catalog", env!("CARGO_MANIFEST_DIR")),
-    );
-    docker_compose.run();
-    guard.replace(docker_compose);
-}
-
-#[dtor]
-fn after_all() {
-    let mut guard = DOCKER_COMPOSE_ENV.write().unwrap();
-    guard.take();
-}
+// #[ctor]
+// fn before_all() {
+//     let mut guard = DOCKER_COMPOSE_ENV.write().unwrap();
+//     let docker_compose = DockerCompose::new(
+//         normalize_test_name(module_path!()),
+//         format!("{}/testdata/hms_catalog", env!("CARGO_MANIFEST_DIR")),
+//     );
+//     docker_compose.run();
+//     guard.replace(docker_compose);
+// }
+//
+// #[dtor]
+// fn after_all() {
+//     let mut guard = DOCKER_COMPOSE_ENV.write().unwrap();
+//     guard.take();
+// }
 
 async fn get_catalog() -> HmsCatalog {
     set_up();
@@ -384,11 +384,148 @@ async fn test_drop_namespace() -> Result<()> {
 #[tokio::test]
 async fn test_update_table() -> Result<()> {
     let catalog = get_catalog().await;
-    let creation = set_table_creation("s3a://warehouse/hive", "my_table")?;
     let namespace = Namespace::new(NamespaceIdent::new("test_update_table".into()));
     set_test_namespace(&catalog, namespace.name()).await?;
 
+    let creation = set_table_creation("s3a://warehouse/hive/test_update_table.db/", "my_table")?;
+
     let table = catalog.create_table(namespace.name(), creation).await?;
+
+    // =====================
+
+    let schema: Arc<arrow_schema::Schema> = Arc::new(
+        table
+            .metadata()
+            .current_schema()
+            .as_ref()
+            .try_into()
+            .unwrap(),
+    );
+
+    let location_generator = DefaultLocationGenerator::new(table.metadata().clone()).unwrap();
+    let file_name_generator = DefaultFileNameGenerator::new(
+        "test".to_string(),
+        None,
+        iceberg::spec::DataFileFormat::Parquet,
+    );
+
+    let parquet_writer_builder = ParquetWriterBuilder::new(
+        WriterProperties::default(),
+        table.metadata().current_schema().clone(),
+        table.file_io().clone(),
+        location_generator.clone(),
+        file_name_generator.clone(),
+    );
+
+    let data_file_writer_builder = DataFileWriterBuilder::new(parquet_writer_builder, None);
+    let mut data_file_writer = data_file_writer_builder.build().await.unwrap();
+    let col1 = Int32Array::from(vec![Some(0), Some(1), Some(2)]);
+    let col2 = StringArray::from(vec![Some("foo"), Some("bar"), Some("baz")]);
+    let batch = RecordBatch::try_new(schema.clone(), vec![
+        Arc::new(col1) as ArrayRef,
+        Arc::new(col2) as ArrayRef,
+    ])
+    .unwrap();
+
+    data_file_writer.write(batch.clone()).await.unwrap();
+    let data_file = data_file_writer.close().await.unwrap();
+
+    let tx = Transaction::new(&table);
+    let mut append_action = tx.fast_append(None, vec![]).unwrap();
+    append_action.add_data_files(data_file.clone()).unwrap();
+    let tx = append_action.apply().await.unwrap();
+    let _ = tx.commit(&catalog).await.unwrap();
+
+    // =====================
+
+    Ok(())
+}
+
+fn get_external_hms_catalog() -> (HmsCatalog, String, String) {
+    let hms_ip = Ipv4Addr::new(44, 196, 250, 225);
+    let hms_socket_addr = SocketAddr::new(IpAddr::V4(hms_ip), 9083);
+
+    let warehouse = String::from("s3a://kafka-testing-files/iceberg_hive_test");
+
+    let catalog_config = HmsCatalogConfig::builder()
+        // .address(hive_catalog_addr.to_string())
+        .address(hms_socket_addr.to_string())
+        .warehouse(warehouse)
+        .thrift_transport(HmsThriftTransport::Buffered)
+        .props(HashMap::from([
+            (
+                "s3.endpoint".to_string(),
+                "https://s3.us-east-1.amazonaws.com/".to_string(),
+            ),
+            ("s3.region".to_string(), "us-east-1".to_string()),
+            ("s3.access-key-id".to_string(), "adming".to_string()),
+            ("s3.secret-access-key".to_string(), "password".to_string()),
+        ]))
+        .build();
+
+    let catalog = HmsCatalog::new(catalog_config).expect("could not create catalog");
+
+    (
+        catalog,
+        String::from("risingwave_iceberg_hive"),
+        String::from("local_auth_t1"),
+    )
+}
+
+fn get_internal_hms_catalog() -> (HmsCatalog, String, String) {
+    let warehouse = String::from("s3a://warehouse/hive");
+
+    let catalog_config = HmsCatalogConfig::builder()
+        .address("localhost:9083".to_string())
+        .warehouse(warehouse)
+        .thrift_transport(HmsThriftTransport::Buffered)
+        .props(HashMap::from([
+            (
+                "s3.endpoint".to_string(),
+                "http://localhost:9000".to_string(),
+            ),
+            ("s3.access-key-id".to_string(), "admin".to_string()),
+            ("s3.secret-access-key".to_string(), "password".to_string()),
+        ]))
+        .build();
+
+    let catalog = HmsCatalog::new(catalog_config).expect("could not create catalog");
+
+    (catalog, String::from("ns"), String::from("local_auth_t1"))
+}
+
+#[tokio::test]
+async fn test_load_qh_table() -> Result<()> {
+    let (catalog, namespace, tbl_name) = get_internal_hms_catalog();
+
+    let namespace_id = NamespaceIdent::new(namespace);
+
+    let result = catalog
+        .load_table(&TableIdent::new(namespace_id.clone(), tbl_name))
+        .await?;
+
+    println!("DEBUG: result identifier: {:?}", result.identifier());
+    println!(
+        "DEBUG: result metadata location: {:?}",
+        result.metadata_location()
+    );
+    println!("DEBUG: result metadata: {:?}", result.metadata());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_write_table() -> Result<()> {
+    let (catalog, namespace, tbl_name) = get_internal_hms_catalog();
+
+    let namespace_id = NamespaceIdent::new(namespace);
+
+    let table_id = TableIdent::new(namespace_id, tbl_name);
+
+    let table = catalog
+        .load_table(&table_id)
+        .await
+        .expect("could not load table");
 
     // =====================
 

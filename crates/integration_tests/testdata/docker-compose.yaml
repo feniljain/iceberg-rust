@@ -51,6 +51,7 @@ services:
       rest_bridge:
     ports:
       - 9001:9001
+      - 9000:9000
     expose:
       - 9001
       - 9000

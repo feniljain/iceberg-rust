@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use hive_metastore::{Database, PrincipalType, SerDeInfo, StorageDescriptor};
+use hive_metastore::{Database, FieldSchema, PrincipalType, SerDeInfo, StorageDescriptor};
 use iceberg::spec::Schema;
 use iceberg::{Error, ErrorKind, Namespace, NamespaceIdent, Result};
 use pilota::{AHashMap, FastStr};
@@ -163,6 +163,7 @@ pub(crate) fn convert_to_hive_table(
     location: String,
     metadata_location: String,
     properties: &HashMap<String, String>,
+    partition_keys: Option<Vec<FieldSchema>>,
 ) -> Result<hive_metastore::Table> {
     let serde_info = SerDeInfo {
         serialization_lib: Some(SERIALIZATION_LIB.into()),
@@ -190,6 +191,7 @@ pub(crate) fn convert_to_hive_table(
     ]);
 
     let current_time_ms = get_current_time()?;
+
     let owner = properties
         .get(OWNER)
         .map_or(HMS_DEFAULT_DB_OWNER.to_string(), |v| v.into());
@@ -203,6 +205,7 @@ pub(crate) fn convert_to_hive_table(
         last_access_time: Some(current_time_ms),
         sd: Some(storage_descriptor),
         parameters: Some(parameters),
+        partition_keys,
         ..Default::default()
     })
 }
@@ -387,6 +390,7 @@ mod tests {
             location.clone(),
             metadata_location,
             &properties,
+            Some(vec![]), // TODO(feniljain): test this
         )?;
 
         let serde_info = SerDeInfo {

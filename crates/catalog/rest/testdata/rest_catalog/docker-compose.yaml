@@ -34,7 +34,7 @@ services:
       - minio
     networks:
       rest_bridge:
-    expose:
+    ports:
       - 8181
 
   minio:
@@ -46,7 +46,7 @@ services:
     hostname: icebergdata.minio
     networks:
       rest_bridge:
-    expose:
+    ports:
       - 9001
       - 9000
     command: ["server", "/data", "--console-address", ":9001"]
