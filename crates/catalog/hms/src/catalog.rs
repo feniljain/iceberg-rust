@@ -363,7 +363,6 @@ impl Catalog for HmsCatalog {
             location,
             metadata_location.clone(),
             metadata.properties(),
-            Some(vec![]),
         )?;
 
         self.client
@@ -572,7 +571,6 @@ impl Catalog for HmsCatalog {
             tbl_location.into(),
             new_metadata_location.to_string(),
             update_table_metadata.metadata.properties(),
-            Some(vec![]),
         )?;
 
         println!("DEBUG::converted to hive table: {:?}", hive_table_new);

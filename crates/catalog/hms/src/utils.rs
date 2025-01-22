@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use hive_metastore::{Database, FieldSchema, PrincipalType, SerDeInfo, StorageDescriptor};
+use hive_metastore::{Database, PrincipalType, SerDeInfo, StorageDescriptor};
 use iceberg::spec::Schema;
 use iceberg::{Error, ErrorKind, Namespace, NamespaceIdent, Result};
 use pilota::{AHashMap, FastStr};
@@ -163,7 +163,6 @@ pub(crate) fn convert_to_hive_table(
     location: String,
     metadata_location: String,
     properties: &HashMap<String, String>,
-    partition_keys: Option<Vec<FieldSchema>>,
 ) -> Result<hive_metastore::Table> {
     let serde_info = SerDeInfo {
         serialization_lib: Some(SERIALIZATION_LIB.into()),
@@ -205,7 +204,10 @@ pub(crate) fn convert_to_hive_table(
         last_access_time: Some(current_time_ms),
         sd: Some(storage_descriptor),
         parameters: Some(parameters),
-        partition_keys,
+        // Default of `partition_key` is `None`, but hive converts it into Some(vec[])
+        // and we don't use this field, inferring from here:
+        // https://github.com/apache/iceberg-python/blob/2cd4e789d0fd7d6aab261037e8229ca94c218923/pyiceberg/catalog/hive.py#L320-L334
+        partition_keys: Some(vec![]),
         ..Default::default()
     })
 }
@@ -390,7 +392,6 @@ mod tests {
             location.clone(),
             metadata_location,
             &properties,
-            Some(vec![]), // TODO(feniljain): test this
         )?;
 
         let serde_info = SerDeInfo {
