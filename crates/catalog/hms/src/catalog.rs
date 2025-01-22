@@ -523,9 +523,10 @@ impl Catalog for HmsCatalog {
         let requirements = commit.take_requirements();
         let table_updates = commit.take_updates();
 
-        let mut update_table_metadata_builder =
-            // TODO: fill in current file location here
-            TableMetadataBuilder::new_from_metadata(iceberg_table.metadata().clone(), None);
+        let mut update_table_metadata_builder = TableMetadataBuilder::new_from_metadata(
+            iceberg_table.metadata().clone(),
+            iceberg_table.metadata_location().map(|x| x.to_string()),
+        );
 
         // apply table updates
         for table_update in table_updates {
