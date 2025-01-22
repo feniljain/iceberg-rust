@@ -39,6 +39,7 @@ use iceberg_test_utils::{normalize_test_name, set_up};
 use parquet::file::properties::WriterProperties;
 use port_scanner::scan_port_addr;
 use tokio::time::sleep;
+use uuid::Uuid;
 
 const HMS_CATALOG_PORT: u16 = 9083;
 const MINIO_PORT: u16 = 9000;
@@ -540,7 +541,7 @@ async fn test_write_table() -> Result<()> {
 
     let location_generator = DefaultLocationGenerator::new(table.metadata().clone()).unwrap();
     let file_name_generator = DefaultFileNameGenerator::new(
-        "test".to_string(),
+        Uuid::new_v4().to_string(),
         None,
         iceberg::spec::DataFileFormat::Parquet,
     );

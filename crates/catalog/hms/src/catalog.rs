@@ -517,8 +517,6 @@ impl Catalog for HmsCatalog {
         // load table
         let iceberg_table = self.load_table(&identifier).await?;
 
-        println!("DEBUG::loaded iceberg table: {:?}", iceberg_table);
-
         let requirements = commit.take_requirements();
         let table_updates = commit.take_updates();
 
@@ -532,14 +530,10 @@ impl Catalog for HmsCatalog {
             update_table_metadata_builder = table_update.apply(update_table_metadata_builder)?;
         }
 
-        println!("DEBUG::applied table updates");
-
         // check table requirements
         for table_requirement in requirements {
             table_requirement.check(Some(iceberg_table.metadata()))?;
         }
-
-        println!("DEBUG::checked table requirements");
 
         // write new metadata file
         let metadata_location = iceberg_table.metadata().location();
@@ -552,11 +546,6 @@ impl Catalog for HmsCatalog {
         let update_table_metadata = update_table_metadata_builder.build()?;
         file.write(serde_json::to_vec(&update_table_metadata.metadata)?.into())
             .await?;
-
-        println!(
-            "DEBUG::wrote table metadata, {:?} {:?}",
-            new_metadata_location, update_table_metadata
-        );
 
         let db_name = validate_namespace(iceberg_table.identifier().namespace())?;
         let tbl_name = iceberg_table.identifier().clone().name().to_string();
@@ -572,8 +561,6 @@ impl Catalog for HmsCatalog {
             new_metadata_location.to_string(),
             update_table_metadata.metadata.properties(),
         )?;
-
-        println!("DEBUG::converted to hive table: {:?}", hive_table_new);
 
         // run alter table on hive
         self.client
