@@ -502,6 +502,7 @@ impl Catalog for HmsCatalog {
         Ok(())
     }
 
+    
     async fn update_table(&self, mut commit: TableCommit) -> Result<Table> {
         // check if table exists
         let identifier = commit.identifier().clone();
@@ -518,8 +519,10 @@ impl Catalog for HmsCatalog {
         let requirements = commit.take_requirements();
         let table_updates = commit.take_updates();
 
-        let mut update_table_metadata_builder =
-            TableMetadataBuilder::new_from_metadata(iceberg_table.metadata().clone(), None);
+        let mut update_table_metadata_builder = TableMetadataBuilder::new_from_metadata(
+            iceberg_table.metadata().clone(),
+            iceberg_table.metadata_location().map(|x| x.to_string()),
+        );
 
         // apply table updates
         for table_update in table_updates {
@@ -532,9 +535,9 @@ impl Catalog for HmsCatalog {
         }
 
         // write new metadata file
-        let location = iceberg_table.metadata().location();
+        let metadata_location = iceberg_table.metadata().location();
         let new_metadata_location = create_metadata_location(
-            &location,
+            &metadata_location,
             iceberg_table.metadata().next_sequence_number() as i32,
         )?;
 
@@ -546,12 +549,14 @@ impl Catalog for HmsCatalog {
         let db_name = validate_namespace(iceberg_table.identifier().namespace())?;
         let tbl_name = iceberg_table.identifier().clone().name().to_string();
 
+        let tbl_location = iceberg_table.metadata().location();
+
         // convert iceberg table to hive table
         let hive_table_new = convert_to_hive_table(
             db_name.clone(),
             update_table_metadata.metadata.current_schema(),
-            tbl_name.clone(),
-            location.into(),
+            tbl_name.clone().into(),
+            tbl_location.into(),
             new_metadata_location.to_string(),
             update_table_metadata.metadata.properties(),
         )?;
