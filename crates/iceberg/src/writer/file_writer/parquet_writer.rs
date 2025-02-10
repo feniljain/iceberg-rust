@@ -19,11 +19,12 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use arrow_array::{ArrayRef, Float32Array, Float64Array, StructArray};
-use arrow_schema::{DataType, Field, SchemaRef as ArrowSchemaRef};
+use arrow_schema::{DataType, SchemaRef as ArrowSchemaRef};
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use itertools::Itertools;
@@ -568,7 +569,7 @@ impl ParquetWriter {
         // TODO(feniljain):
         // Types:
         // [X] Primitive
-        // [ ] Struct
+        // [X] Struct
         // [ ] List
         // [ ] Map
         //
@@ -588,21 +589,44 @@ impl ParquetWriter {
                 count_float_nans!(Float64Array, col, self, field_id);
             }
             DataType::Struct(fields) => {
-                let struct_ty_field: Type = field.field_type.downcast::<Type>();
-                // let struct_ty_field: StructType = field.field_type.downcast::<Type>.into();
                 let struct_arr = col.as_any().downcast_ref::<StructArray>().unwrap();
-                for (idx, field) in fields.iter().enumerate() {
-                    match field.data_type() {
+                for (idx, arrow_field) in fields.iter().enumerate() {
+                    match arrow_field.data_type() {
                         DataType::Float32 => {
                             let float_arr_ref = struct_arr.column(idx);
-                            count_float_nans!(Float32Array, float_arr_ref, self, field_id); // TODO(feniljain)
+
+                            let field_id = match field.clone().field_type.deref() {
+                                Type::Struct(struct_ty) => struct_ty.fields()[idx].id,
+                                _ => unreachable!(),
+                            };
+
+                            count_float_nans!(Float32Array, float_arr_ref, self, field_id);
                         }
                         DataType::Float64 => {
-                            count_float_nans!(Float64Array, col, self, field_id); // TODO(feniljain)
                             let float_arr_ref = struct_arr.column(idx);
-                            count_float_nans!(Float64Array, float_arr_ref, self, field_id); // TODO(feniljain)
+
+                            let field_id = match field.clone().field_type.deref() {
+                                Type::Struct(struct_ty) => struct_ty.fields()[idx].id,
+                                _ => unreachable!(),
+                            };
+
+                            count_float_nans!(Float64Array, float_arr_ref, self, field_id);
                         }
-                        _ => {} // TODO(feniljain): calling transverse for nested types again
+                        DataType::List(_)
+                        | DataType::LargeList(_)
+                        | DataType::FixedSizeList(_, _)
+                        | DataType::Struct(_)
+                        | DataType::Map(_, _) => {
+                            let arr_ref = struct_arr.column(idx);
+
+                            let field = match field.clone().field_type.deref() {
+                                Type::Struct(struct_ty) => struct_ty.fields()[idx].clone(),
+                                _ => unreachable!(),
+                            };
+
+                            self.transverse(arr_ref, &field);
+                        }
+                        _ => {}
                     };
                 }
             }
@@ -988,33 +1012,56 @@ mod tests {
         let file_name_gen =
             DefaultFileNameGenerator::new("test".to_string(), None, DataFileFormat::Parquet);
 
-        let schema_struct_fields = Fields::from(vec![Field::new("col4", DataType::Float32, false)
-            .with_metadata(HashMap::from([(
-                PARQUET_FIELD_ID_META_KEY.to_string(),
-                "4".to_string(),
-            )]))]);
+        let schema_struct_float_fields =
+            Fields::from(vec![Field::new("col4", DataType::Float32, false)
+                .with_metadata(HashMap::from([(
+                    PARQUET_FIELD_ID_META_KEY.to_string(),
+                    "4".to_string(),
+                )]))]);
+
+        let schema_struct_nested_float_fields =
+            Fields::from(vec![Field::new("col7", DataType::Float32, false)
+                .with_metadata(HashMap::from([(
+                    PARQUET_FIELD_ID_META_KEY.to_string(),
+                    "7".to_string(),
+                )]))]);
+
+        let schema_struct_nested_fields = Fields::from(vec![Field::new(
+            "col6",
+            arrow_schema::DataType::Struct(schema_struct_nested_float_fields.clone()),
+            false,
+        )
+        .with_metadata(HashMap::from([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            "6".to_string(),
+        )]))]); // TODO(feniljain): add test for list and map inside struct too
 
         // prepare data
         let arrow_schema = {
             let fields = vec![
-                arrow_schema::Field::new("col", arrow_schema::DataType::Float32, false)
-                    .with_metadata(HashMap::from([(
-                        PARQUET_FIELD_ID_META_KEY.to_string(),
-                        "0".to_string(),
-                    )])),
-                arrow_schema::Field::new("col2", arrow_schema::DataType::Float64, false)
-                    .with_metadata(HashMap::from([(
-                        PARQUET_FIELD_ID_META_KEY.to_string(),
-                        "1".to_string(),
-                    )])),
-                arrow_schema::Field::new(
+                Field::new("col", arrow_schema::DataType::Float32, false).with_metadata(
+                    HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "0".to_string())]),
+                ),
+                Field::new("col2", arrow_schema::DataType::Float64, false).with_metadata(
+                    HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "1".to_string())]),
+                ),
+                Field::new(
                     "col3",
-                    arrow_schema::DataType::Struct(schema_struct_fields.clone()),
+                    arrow_schema::DataType::Struct(schema_struct_float_fields.clone()),
                     false,
                 )
                 .with_metadata(HashMap::from([(
                     PARQUET_FIELD_ID_META_KEY.to_string(),
                     "3".to_string(),
+                )])),
+                Field::new(
+                    "col5",
+                    arrow_schema::DataType::Struct(schema_struct_nested_fields.clone()),
+                    false,
+                )
+                .with_metadata(HashMap::from([(
+                    PARQUET_FIELD_ID_META_KEY.to_string(),
+                    "5".to_string(),
                 )])),
             ];
             Arc::new(arrow_schema::Schema::new(fields))
@@ -1033,7 +1080,7 @@ mod tests {
         //                     .into(),
         //             ])),
         //         )
-        //         .into(), // struct with float field
+        //         .into(), // XXX struct with float field
         //         // NestedField::required(
         //         //     4,
         //         //     "col3",
@@ -1058,7 +1105,7 @@ mod tests {
         //         //     )
         //         //     .into()])),
         //         // )
-        //         // .into(), // struct inside struct with float field
+        //         // .into(), // XXX struct inside struct with float field
         //         // NestedField::required(
         //         //     9,
         //         //     "col5",
@@ -1078,7 +1125,7 @@ mod tests {
         //         //             )),
         //         //         )
         //         //         .into(),
-        //         //     )), // float inside list inside map
+        //         //     )), // XXX float inside list inside map
         //         // )
         //         // .into(),
         //     ])
@@ -1100,8 +1147,18 @@ mod tests {
         )) as ArrayRef;
 
         let struct_float_field_col = Arc::new(StructArray::new(
-            schema_struct_fields,
+            schema_struct_float_fields,
             vec![float_32_col.clone()],
+            None,
+        )) as ArrayRef;
+
+        let struct_nested_float_field_col = Arc::new(StructArray::new(
+            schema_struct_nested_fields,
+            vec![Arc::new(StructArray::new(
+                schema_struct_nested_float_fields,
+                vec![float_32_col.clone()],
+                None,
+            )) as ArrayRef],
             None,
         )) as ArrayRef;
 
@@ -1109,6 +1166,7 @@ mod tests {
             float_32_col,
             float_64_col,
             struct_float_field_col,
+            struct_nested_float_field_col,
         ])
         .unwrap();
 
@@ -1138,22 +1196,35 @@ mod tests {
 
         // check data file
         assert_eq!(data_file.record_count(), 4);
-        assert_eq!(*data_file.value_counts(), HashMap::from([(0, 4), (1, 4), (4, 4)]));
+        assert_eq!(
+            *data_file.value_counts(),
+            HashMap::from([(0, 4), (1, 4), (4, 4), (7, 4)])
+        );
         assert_eq!(
             *data_file.lower_bounds(),
-            HashMap::from([(0, Datum::float(1.0)), (1, Datum::double(1.0)), (4, Datum::float(1.0))])
+            HashMap::from([
+                (0, Datum::float(1.0)),
+                (1, Datum::double(1.0)),
+                (4, Datum::float(1.0)),
+                (7, Datum::float(1.0)),
+            ])
         );
         assert_eq!(
             *data_file.upper_bounds(),
-            HashMap::from([(0, Datum::float(2.0)), (1, Datum::double(2.0)), (4, Datum::float(2.0))])
+            HashMap::from([
+                (0, Datum::float(2.0)),
+                (1, Datum::double(2.0)),
+                (4, Datum::float(2.0)),
+                (7, Datum::float(2.0)),
+            ])
         );
         assert_eq!(
             *data_file.null_value_counts(),
-            HashMap::from([(0, 0), (1, 0), (4, 0)])
+            HashMap::from([(0, 0), (1, 0), (4, 0), (7, 0)])
         );
         assert_eq!(
             *data_file.nan_value_counts(),
-            HashMap::from([(0, 1), (1, 1), (4, 1)])
+            HashMap::from([(0, 1), (1, 1), (4, 1), (7, 1)])
         );
 
         // check the written file
