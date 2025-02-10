@@ -23,7 +23,7 @@ use std::ops::Deref;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
-use arrow_array::{ArrayRef, Float32Array, Float64Array, StructArray};
+use arrow_array::{ArrayRef, Float32Array, Float64Array, ListArray, StructArray};
 use arrow_schema::{DataType, SchemaRef as ArrowSchemaRef};
 use bytes::Bytes;
 use futures::future::BoxFuture;
@@ -605,6 +605,7 @@ impl ParquetWriter {
                         DataType::Float64 => {
                             let float_arr_ref = struct_arr.column(idx);
 
+                            // TODO(feniljain): How to efficiently cast field to given type
                             let field_id = match field.clone().field_type.deref() {
                                 Type::Struct(struct_ty) => struct_ty.fields()[idx].id,
                                 _ => unreachable!(),
@@ -630,17 +631,44 @@ impl ParquetWriter {
                     };
                 }
             }
-            // DataType::List(field) => {
-            //     // match field.data_type() {
-            //     //     DataType::Float32 => {
-            //     //         count_float_nans!(Float32Array, col, self, field_id);
-            //     //     }
-            //     //     DataType::Float64 => {
-            //     //         count_float_nans!(Float64Array, col, self, field_id);
-            //     //     }
-            //     //     _ => {}
-            //     // };
-            // }
+            DataType::List(arrow_field) => {
+                let list_arr = col.as_any().downcast_ref::<ListArray>().unwrap();
+                let field_data_typ = arrow_field.data_type();
+
+                let n_vals = list_arr.value_offsets().len();
+
+                let field = match field.clone().field_type.deref() {
+                    Type::List(list_typ) => list_typ.element_field.clone(),
+                    _ => unreachable!(),
+                };
+                let field_id = field.id;
+
+                match field_data_typ {
+                    DataType::Float32 => {
+                        for idx in 0..n_vals {
+                            let arr_ref = list_arr.value(idx);
+                            count_float_nans!(Float32Array, arr_ref, self, field_id);
+                        }
+                    }
+                    DataType::Float64 => {
+                        for idx in 0..n_vals {
+                            let arr_ref = list_arr.value(idx);
+                            count_float_nans!(Float64Array, arr_ref, self, field_id);
+                        }
+                    }
+                    DataType::List(_)
+                    | DataType::LargeList(_)
+                    | DataType::FixedSizeList(_, _)
+                    | DataType::Struct(_)
+                    | DataType::Map(_, _) => {
+                        for idx in 0..n_vals {
+                            let arr_ref = list_arr.value(idx);
+                            self.transverse(&arr_ref, &field);
+                        }
+                    }
+                    _ => {}
+                };
+            }
             // DataType::LargeList => {}
             // DataType::FixedSizeList => {}
             // DataType::Map => {}
@@ -1011,6 +1039,8 @@ mod tests {
             MockLocationGenerator::new(temp_dir.path().to_str().unwrap().to_string());
         let file_name_gen =
             DefaultFileNameGenerator::new("test".to_string(), None, DataFileFormat::Parquet);
+
+        // TODO(feniljain): Write test for list types, both direct float fields and nested ones
 
         let schema_struct_float_fields =
             Fields::from(vec![Field::new("col4", DataType::Float32, false)
