@@ -21,7 +21,8 @@ use std::fmt::Debug;
 use async_trait::async_trait;
 use aws_sdk_glue::types::TableInput;
 use iceberg::io::{
-    FileIO, S3_ACCESS_KEY_ID, S3_ENDPOINT, S3_REGION, S3_SECRET_ACCESS_KEY, S3_SESSION_TOKEN,
+    FileIO, S3_ACCESS_KEY_ID, S3_ASSUME_ROLE_ARN, S3_ASSUME_ROLE_EXTERNAL_ID,
+    S3_ASSUME_ROLE_SESSION_NAME, S3_ENDPOINT, S3_REGION, S3_SECRET_ACCESS_KEY, S3_SESSION_TOKEN,
 };
 use iceberg::spec::{TableMetadata, TableMetadataBuilder};
 use iceberg::table::Table;
@@ -37,7 +38,8 @@ use crate::utils::{
     create_sdk_config, get_default_table_location, get_metadata_location, validate_namespace,
 };
 use crate::{
-    with_catalog_id, AWS_ACCESS_KEY_ID, AWS_REGION_NAME, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN,
+    with_catalog_id, AWS_ACCESS_KEY_ID, AWS_ASSUME_ROLE_ARN, AWS_ASSUME_ROLE_EXTERNAL_ID,
+    AWS_ASSUME_ROLE_SESSION_NAME, AWS_REGION_NAME, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN,
 };
 
 #[derive(Debug, TypedBuilder)]
@@ -100,6 +102,28 @@ impl GlueCatalog {
         if !file_io_props.contains_key(S3_ENDPOINT) {
             if let Some(aws_endpoint) = config.uri.as_ref() {
                 file_io_props.insert(S3_ENDPOINT.to_string(), aws_endpoint.to_string());
+            }
+        }
+        if !file_io_props.contains_key(S3_ASSUME_ROLE_ARN) {
+            if let Some(assume_role_arn) = file_io_props.get(AWS_ASSUME_ROLE_ARN) {
+                file_io_props.insert(S3_ASSUME_ROLE_ARN.to_string(), assume_role_arn.to_string());
+            }
+        }
+        if !file_io_props.contains_key(S3_ASSUME_ROLE_EXTERNAL_ID) {
+            if let Some(assume_role_external_id) = file_io_props.get(AWS_ASSUME_ROLE_EXTERNAL_ID) {
+                file_io_props.insert(
+                    S3_ASSUME_ROLE_EXTERNAL_ID.to_string(),
+                    assume_role_external_id.to_string(),
+                );
+            }
+        }
+        if !file_io_props.contains_key(S3_ASSUME_ROLE_SESSION_NAME) {
+            if let Some(assume_role_session_name) = file_io_props.get(AWS_ASSUME_ROLE_SESSION_NAME)
+            {
+                file_io_props.insert(
+                    S3_ASSUME_ROLE_SESSION_NAME.to_string(),
+                    assume_role_session_name.to_string(),
+                );
             }
         }
 
