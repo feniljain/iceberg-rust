@@ -637,8 +637,6 @@ impl ParquetWriter {
 
                 let n_vals = list_arr.offsets().len() - 1;
 
-                println!("n_vals: {}", n_vals);
-
                 let field = match field.clone().field_type.deref() {
                     Type::List(list_typ) => list_typ.element_field.clone(),
                     _ => unreachable!(),
@@ -648,7 +646,6 @@ impl ParquetWriter {
                 match field_data_typ {
                     DataType::Float32 => {
                         for idx in 0..n_vals {
-                            println!("idx: {}", idx);
                             let arr_ref = list_arr.value(idx);
                             count_float_nans!(Float32Array, arr_ref, self, field_id);
                         }
@@ -788,7 +785,7 @@ mod tests {
     use super::*;
     use crate::arrow::schema_to_arrow_schema;
     use crate::io::FileIOBuilder;
-    use crate::spec::{PrimitiveLiteral, Struct, *};
+    use crate::spec::{PrimitiveLiteral, Struct, Schema as IcebergSchema, *};
     use crate::writer::file_writer::location_generator::test::MockLocationGenerator;
     use crate::writer::file_writer::location_generator::DefaultFileNameGenerator;
     use crate::writer::tests::check_parquet_data_file;
@@ -1276,18 +1273,15 @@ mod tests {
 
         // TODO(feniljain): Write test for list types, both direct float fields and nested ones
 
-        let schema_list_float_field = Arc::new(
-            Field::new("item", DataType::Float32, true).with_metadata(HashMap::from([(
-                PARQUET_FIELD_ID_META_KEY.to_string(),
-                "1".to_string(),
-            )])),
+        let schema_list_float_field = Field::new("col1", DataType::Float32, true).with_metadata(
+            HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "1".to_string())]),
         );
 
         // prepare data
         let arrow_schema = {
-            let fields = vec![Field::new(
+            let fields = vec![Field::new_list(
                 "col0",
-                arrow_schema::DataType::List(schema_list_float_field),
+                schema_list_float_field.clone(),
                 true,
             )
             .with_metadata(HashMap::from([(
@@ -1297,12 +1291,7 @@ mod tests {
             Arc::new(arrow_schema::Schema::new(fields))
         };
 
-        println!("arrow_schema: {:?}", arrow_schema);
-
-        // let list_float_field_col =
-        //     Arc::new(ListArray::from_iter_primitive::<Float32Type, _, _>(vec![
-        //         Some(vec![Some(1.0_f32), Some(f32::NAN), Some(2.0), Some(2.0)]),
-        //     ])) as ArrayRef;
+        println!("arrow_schema: {}", arrow_schema);
 
         let list_float_field_col = Arc::new({
             let list_parts = ListArray::from_iter_primitive::<Float32Type, _, _>(vec![Some(vec![
@@ -1312,11 +1301,14 @@ mod tests {
                 Some(2.0),
             ])])
             .into_parts();
-            println!("list_parts: {:?}", list_parts);
             ListArray::new(
                 {
-                    if let DataType::List(field) = arrow_schema.field(0).data_type() {
-                        field.clone()
+                    println!("DEBUG: arrow_schema.field(0): {:?}", arrow_schema.field(0));
+                    if let DataType::List(_) = arrow_schema.field(0).data_type() {
+                        // let field1 = schema_list_float_field.with_name("colcol");
+                        // println!("DEBUG: field: {:?}", field1.clone());
+                        // field1.into()
+                        schema_list_float_field.into()
                     } else {
                         unreachable!()
                     }
@@ -1327,8 +1319,13 @@ mod tests {
             )
         }) as ArrayRef;
 
+        println!("DEBUG: list_float_field_col.data_type: {:?}", list_float_field_col.data_type());
+
         let to_write = RecordBatch::try_new(arrow_schema.clone(), vec![list_float_field_col])
             .expect("Could not form record batch");
+
+        let iceberg_schema: IcebergSchema = to_write.schema().as_ref().try_into().expect("Could not convert to iceberg schema");
+        println!("DEBUG: iceberg_schema: {:?}", iceberg_schema);
 
         // write data
         let mut pw = ParquetWriterBuilder::new(
@@ -1338,7 +1335,7 @@ mod tests {
                     .schema()
                     .as_ref()
                     .try_into()
-                    .expect("Could not convert schema"),
+                    .expect("Could not convert iceberg schema"),
             ),
             file_io.clone(),
             location_gen,
@@ -1354,25 +1351,24 @@ mod tests {
             .into_iter()
             .next()
             .unwrap()
-            // Put dummy field for build successfully.
             .content(crate::spec::DataContentType::Data)
             .partition(Struct::empty())
             .build()
             .unwrap();
 
         // check data file
-        assert_eq!(data_file.record_count(), 4);
-        assert_eq!(*data_file.value_counts(), HashMap::from([(0, 4)]));
+        assert_eq!(data_file.record_count(), 1);
+        assert_eq!(*data_file.value_counts(), HashMap::from([(1, 4)]));
         assert_eq!(
             *data_file.lower_bounds(),
-            HashMap::from([(0, Datum::float(1.0)),])
+            HashMap::from([(1, Datum::float(1.0)),])
         );
         assert_eq!(
             *data_file.upper_bounds(),
-            HashMap::from([(0, Datum::float(2.0)),])
+            HashMap::from([(1, Datum::float(2.0)),])
         );
-        assert_eq!(*data_file.null_value_counts(), HashMap::from([(0, 0)]));
-        assert_eq!(*data_file.nan_value_counts(), HashMap::from([(0, 1)]));
+        assert_eq!(*data_file.null_value_counts(), HashMap::from([(1, 0)]));
+        assert_eq!(*data_file.nan_value_counts(), HashMap::from([(1, 1)]));
 
         // check the written file
         let expect_batch = concat_batches(&arrow_schema, vec![&to_write]).unwrap();
