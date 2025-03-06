@@ -23,7 +23,7 @@ use std::ops::Deref;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
-use arrow_array::{ArrayRef, Float32Array, Float64Array, ListArray, StructArray};
+use arrow_array::{ArrayRef, Float32Array, Float64Array, ListArray, LargeListArray, FixedSizeListArray, StructArray};
 use arrow_schema::{DataType, SchemaRef as ArrowSchemaRef};
 use bytes::Bytes;
 use futures::future::BoxFuture;
@@ -95,6 +95,9 @@ impl<T: LocationGenerator, F: FileNameGenerator> FileWriterBuilder for ParquetWr
         )?;
         let inner_writer = TrackWriter::new(out_file.writer().await?, written_size.clone());
         let async_writer = AsyncFileWriter::new(inner_writer);
+
+        println!("DEBUG::build::arrow_schema: {}", arrow_schema);
+
         let writer =
             AsyncArrowWriter::try_new(async_writer, arrow_schema.clone(), Some(self.props))
                 .map_err(|err| {
@@ -349,6 +352,47 @@ macro_rules! count_float_nans {
     };
 }
 
+macro_rules! handle_list_type {
+    ($t:ty, $col:ident, $self:ident, $field:ident, $arrow_field:ident) => {
+        let list_arr = $col.as_any().downcast_ref::<$t>().unwrap();
+        let field_data_typ = $arrow_field.data_type();
+
+        let n_vals = list_arr.offsets().len() - 1;
+
+        let field = match $field.clone().field_type.deref() {
+            Type::List(list_typ) => list_typ.element_field.clone(),
+            _ => unreachable!(),
+        };
+        let field_id = field.id;
+
+        match field_data_typ {
+            DataType::Float32 => {
+                for idx in 0..n_vals {
+                    let arr_ref = list_arr.value(idx);
+                    count_float_nans!(Float32Array, arr_ref, $self, field_id);
+                }
+            }
+            DataType::Float64 => {
+                for idx in 0..n_vals {
+                    let arr_ref = list_arr.value(idx);
+                    count_float_nans!(Float64Array, arr_ref, $self, field_id);
+                }
+            }
+            DataType::List(_)
+            | DataType::LargeList(_)
+            | DataType::FixedSizeList(_, _)
+            | DataType::Struct(_)
+            | DataType::Map(_, _) => {
+                for idx in 0..n_vals {
+                    let arr_ref = list_arr.value(idx);
+                    $self.transverse(&arr_ref, &field);
+                }
+            }
+            _ => {}
+        };
+    }
+}
+
 // macro_rules! update_counters {
 //     (add, $self:ident, $files_field:ident, $total_files_field:ident,
 //      $added_size_field:ident, $total_size_field:ident, $size:expr) => {
@@ -490,6 +534,7 @@ impl ParquetWriter {
         Ok(builder)
     }
 
+<<<<<<< HEAD
     /// `ParquetMetadata` to data file builder
     pub(crate) fn parquet_to_data_file_builder(
         schema: SchemaRef,
@@ -563,6 +608,42 @@ impl ParquetWriter {
         Ok(builder)
     }
 
+    // fn handle_list_type(&mut self, field: &NestedFieldRef, field_data_typ: DataType) {
+    //     let n_vals = list_arr.offsets().len() - 1;
+    //
+    //     let field = match field.clone().field_type.deref() {
+    //         Type::List(list_typ) => list_typ.element_field.clone(),
+    //         _ => unreachable!(),
+    //     };
+    //     let field_id = field.id;
+    //
+    //     match field_data_typ {
+    //         DataType::Float32 => {
+    //             for idx in 0..n_vals {
+    //                 let arr_ref = list_arr.value(idx);
+    //                 count_float_nans!(Float32Array, arr_ref, self, field_id);
+    //             }
+    //         }
+    //         DataType::Float64 => {
+    //             for idx in 0..n_vals {
+    //                 let arr_ref = list_arr.value(idx);
+    //                 count_float_nans!(Float64Array, arr_ref, self, field_id);
+    //             }
+    //         }
+    //         DataType::List(_)
+    //         | DataType::LargeList(_)
+    //         | DataType::FixedSizeList(_, _)
+    //         | DataType::Struct(_)
+    //         | DataType::Map(_, _) => {
+    //             for idx in 0..n_vals {
+    //                 let arr_ref = list_arr.value(idx);
+    //                 self.transverse(&arr_ref, &field);
+    //             }
+    //         }
+    //         _ => {}
+    //     };
+    // }
+
     fn transverse(&mut self, col: &ArrayRef, field: &NestedFieldRef) {
         let dt = col.data_type();
 
@@ -570,7 +651,7 @@ impl ParquetWriter {
         // Types:
         // [X] Primitive
         // [X] Struct
-        // [ ] List
+        // [X] List
         // [ ] Map
         //
         // https://docs.rs/arrow-array/latest/arrow_array/array/index.html#structs
@@ -632,44 +713,11 @@ impl ParquetWriter {
                 }
             }
             DataType::List(arrow_field) => {
-                let list_arr = col.as_any().downcast_ref::<ListArray>().unwrap();
-                let field_data_typ = arrow_field.data_type();
-
-                let n_vals = list_arr.offsets().len() - 1;
-
-                let field = match field.clone().field_type.deref() {
-                    Type::List(list_typ) => list_typ.element_field.clone(),
-                    _ => unreachable!(),
-                };
-                let field_id = field.id;
-
-                match field_data_typ {
-                    DataType::Float32 => {
-                        for idx in 0..n_vals {
-                            let arr_ref = list_arr.value(idx);
-                            count_float_nans!(Float32Array, arr_ref, self, field_id);
-                        }
-                    }
-                    DataType::Float64 => {
-                        for idx in 0..n_vals {
-                            let arr_ref = list_arr.value(idx);
-                            count_float_nans!(Float64Array, arr_ref, self, field_id);
-                        }
-                    }
-                    DataType::List(_)
-                    | DataType::LargeList(_)
-                    | DataType::FixedSizeList(_, _)
-                    | DataType::Struct(_)
-                    | DataType::Map(_, _) => {
-                        for idx in 0..n_vals {
-                            let arr_ref = list_arr.value(idx);
-                            self.transverse(&arr_ref, &field);
-                        }
-                    }
-                    _ => {}
-                };
+                handle_list_type!(ListArray, col, self, field, arrow_field);
             }
-            // DataType::LargeList => {}
+            DataType::LargeList(arrow_field) => {
+                handle_list_type!(LargeListArray, col, self, field, arrow_field);
+            }
             // DataType::FixedSizeList => {}
             // DataType::Map => {}
             _ => {}
@@ -785,7 +833,7 @@ mod tests {
     use super::*;
     use crate::arrow::schema_to_arrow_schema;
     use crate::io::FileIOBuilder;
-    use crate::spec::{PrimitiveLiteral, Struct, *};
+    use crate::spec::{PrimitiveLiteral, Struct, Schema as IcebergSchema, *};
     use crate::writer::file_writer::location_generator::test::MockLocationGenerator;
     use crate::writer::file_writer::location_generator::DefaultFileNameGenerator;
     use crate::writer::tests::check_parquet_data_file;
@@ -1287,6 +1335,10 @@ mod tests {
             ]
         );
 
+        let schema_large_list_float_field = Field::new("element", DataType::Float32, true).with_metadata(
+            HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "6".to_string())]),
+        );
+
         let arrow_schema = {
             let fields = vec![
                 Field::new_list("col0", schema_list_float_field.clone(), true).with_metadata(
@@ -1295,9 +1347,14 @@ mod tests {
                 Field::new_struct("col1", schema_struct_list_field.clone(), true).with_metadata(
                     HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "2".to_string())]),
                 ).clone(),
+                Field::new_large_list("col3", schema_large_list_float_field.clone(), true).with_metadata(
+                    HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "5".to_string())]),
+                ).clone(),
             ];
             Arc::new(arrow_schema::Schema::new(fields))
         };
+
+        println!("DEBUG::arrow_schema: {}", arrow_schema);
 
         let list_parts = ListArray::from_iter_primitive::<Float32Type, _, _>(vec![Some(vec![
             Some(1.0_f32),
@@ -1350,11 +1407,44 @@ mod tests {
             None,
         )) as ArrayRef;
 
+        let large_list_parts = LargeListArray::from_iter_primitive::<Float32Type, _, _>(vec![Some(vec![
+            Some(1.0_f32),
+            Some(f32::NAN),
+            Some(2.0),
+            Some(2.0),
+        ])])
+        .into_parts();
+
+        let large_list_float_field_col = Arc::new({
+            LargeListArray::new(
+                {
+                    if let DataType::LargeList(field) = arrow_schema.field(2).data_type() {
+                        println!("DEBUG::field: {:?}", field);
+                        field.clone()
+                    } else {
+                        unreachable!()
+                    }
+                },
+                large_list_parts.1,
+                large_list_parts.2,
+                large_list_parts.3,
+            )
+        }) as ArrayRef;
+
         let to_write = RecordBatch::try_new(arrow_schema.clone(), vec![
-            list_float_field_col.clone(),
+            list_float_field_col,
             struct_list_float_field_col,
+            large_list_float_field_col,
         ])
         .expect("Could not form record batch");
+
+        let iceberg_schema: IcebergSchema = to_write
+            .schema()
+            .as_ref()
+            .try_into()
+            .expect("Could not convert iceberg schema");
+
+        println!("DEBUG::iceberg_schema: {:?}", iceberg_schema);
 
         // write data
         let mut pw = ParquetWriterBuilder::new(
@@ -1387,22 +1477,22 @@ mod tests {
 
         // check data file
         assert_eq!(data_file.record_count(), 1);
-        assert_eq!(*data_file.value_counts(), HashMap::from([(1, 4), (4, 4)]));
+        assert_eq!(*data_file.value_counts(), HashMap::from([(1, 4), (4, 4), (6, 4)]));
         assert_eq!(
             *data_file.lower_bounds(),
-            HashMap::from([(1, Datum::float(1.0)), (4, Datum::float(1.0))])
+            HashMap::from([(1, Datum::float(1.0)), (4, Datum::float(1.0)), (6, Datum::float(1.0))])
         );
         assert_eq!(
             *data_file.upper_bounds(),
-            HashMap::from([(1, Datum::float(2.0)), (4, Datum::float(2.0))])
+            HashMap::from([(1, Datum::float(2.0)), (4, Datum::float(2.0)), (6, Datum::float(2.0))])
         );
         assert_eq!(
             *data_file.null_value_counts(),
-            HashMap::from([(1, 0), (4, 0)])
+            HashMap::from([(1, 0), (4, 0), (6, 0)])
         );
         assert_eq!(
             *data_file.nan_value_counts(),
-            HashMap::from([(1, 1), (4, 1)])
+            HashMap::from([(1, 1), (4, 1), (6, 1)])
         );
 
         // check the written file
