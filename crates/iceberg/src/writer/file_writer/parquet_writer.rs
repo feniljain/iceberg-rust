@@ -658,7 +658,6 @@ impl ParquetWriter {
                         DataType::Float64 => {
                             let float_arr_ref = struct_arr.column(idx);
 
-                            // TODO(feniljain): How to efficiently cast field to given type
                             let field_id = match field.clone().field_type.deref() {
                                 Type::Struct(struct_ty) => struct_ty.fields()[idx].id,
                                 _ => unreachable!(),
@@ -718,7 +717,7 @@ impl FileWriter for ParquetWriter {
     async fn write(&mut self, batch: &arrow_array::RecordBatch) -> crate::Result<()> {
         self.current_row_num += batch.num_rows();
 
-        let schema_c = self.schema.clone(); // TODO(feniljain): better way to do this??
+        let schema_c = self.schema.clone();
         let fields = schema_c.as_struct().fields();
 
         for (col, field) in batch.columns().iter().zip(fields) {
@@ -825,7 +824,7 @@ mod tests {
     use super::*;
     use crate::arrow::schema_to_arrow_schema;
     use crate::io::FileIOBuilder;
-    use crate::spec::{PrimitiveLiteral, Schema as IcebergSchema, Struct, *};
+    use crate::spec::{PrimitiveLiteral, Struct, *};
     use crate::writer::file_writer::location_generator::test::MockLocationGenerator;
     use crate::writer::file_writer::location_generator::DefaultFileNameGenerator;
     use crate::writer::tests::check_parquet_data_file;
@@ -978,7 +977,6 @@ mod tests {
         assert_eq!(visitor.name_to_id, expect);
     }
 
-    // TODO(feniljain): Remove nan value count test from here
     #[tokio::test]
     async fn test_parquet_writer() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
@@ -994,27 +992,14 @@ mod tests {
                 arrow_schema::Field::new("col", arrow_schema::DataType::Int64, true).with_metadata(
                     HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "0".to_string())]),
                 ),
-                arrow_schema::Field::new("col1", arrow_schema::DataType::Float32, true)
-                    .with_metadata(HashMap::from([(
-                        PARQUET_FIELD_ID_META_KEY.to_string(),
-                        "1".to_string(),
-                    )])),
             ];
             Arc::new(arrow_schema::Schema::new(fields))
         };
         let col = Arc::new(Int64Array::from_iter_values(0..1024)) as ArrayRef;
         let null_col = Arc::new(Int64Array::new_null(1024)) as ArrayRef;
-        let float_col = Arc::new(Float32Array::from_iter_values((0..1024).map(|x| {
-            if x % 100 == 0 {
-                // There will be 11 NANs as there are 1024 entries
-                f32::NAN
-            } else {
-                x as f32
-            }
-        }))) as ArrayRef;
-        let to_write = RecordBatch::try_new(schema.clone(), vec![col, float_col.clone()]).unwrap();
+        let to_write = RecordBatch::try_new(schema.clone(), vec![col]).unwrap();
         let to_write_null =
-            RecordBatch::try_new(schema.clone(), vec![null_col, float_col]).unwrap();
+            RecordBatch::try_new(schema.clone(), vec![null_col]).unwrap();
 
         // write data
         let mut pw = ParquetWriterBuilder::new(
@@ -1045,23 +1030,19 @@ mod tests {
         assert_eq!(data_file.record_count(), 2048);
         assert_eq!(
             *data_file.value_counts(),
-            HashMap::from([(0, 2048), (1, 2048)])
+            HashMap::from([(0, 2048)])
         );
         assert_eq!(
             *data_file.lower_bounds(),
-            HashMap::from([(0, Datum::long(0)), (1, Datum::float(1.0))])
+            HashMap::from([(0, Datum::long(0))])
         );
         assert_eq!(
             *data_file.upper_bounds(),
-            HashMap::from([(0, Datum::long(1023)), (1, Datum::float(1023.0))])
+            HashMap::from([(0, Datum::long(1023))])
         );
         assert_eq!(
             *data_file.null_value_counts(),
-            HashMap::from([(0, 1024), (1, 0)])
-        );
-        assert_eq!(
-            *data_file.nan_value_counts(),
-            HashMap::from([(0, 0), (1, 22)]) // 22, cause we wrote float column twice
+            HashMap::from([(0, 1024)])
         );
 
         // check the written file
@@ -1071,11 +1052,106 @@ mod tests {
         Ok(())
     }
 
-    // TODO(feniljain): Think what all nested types tests we can add
-    // Need to do this cause we only handle struct type in nested mode I think
-
     #[tokio::test]
     async fn test_nan_val_cnts_primitive_type() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let file_io = FileIOBuilder::new_fs_io().build().unwrap();
+        let location_gen =
+            MockLocationGenerator::new(temp_dir.path().to_str().unwrap().to_string());
+        let file_name_gen =
+            DefaultFileNameGenerator::new("test".to_string(), None, DataFileFormat::Parquet);
+        //
+        // prepare data
+        let arrow_schema = {
+            let fields = vec![
+                Field::new("col", arrow_schema::DataType::Float32, false).with_metadata(
+                    HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "0".to_string())]),
+                ),
+                Field::new("col2", arrow_schema::DataType::Float64, false).with_metadata(
+                    HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "1".to_string())]),
+                ),
+            ];
+            Arc::new(arrow_schema::Schema::new(fields))
+        };
+
+        let float_32_col = Arc::new(Float32Array::from_iter_values_with_nulls(
+            [1.0_f32, f32::NAN, 2.0, 2.0].into_iter(),
+            None,
+        )) as ArrayRef;
+
+        let float_64_col = Arc::new(Float64Array::from_iter_values_with_nulls(
+            [1.0_f64, f64::NAN, 2.0, 2.0].into_iter(),
+            None,
+        )) as ArrayRef;
+
+        let to_write = RecordBatch::try_new(arrow_schema.clone(), vec![
+            float_32_col,
+            float_64_col,
+        ])
+        .unwrap();
+
+        // write data
+        let mut pw = ParquetWriterBuilder::new(
+            WriterProperties::builder().build(),
+            Arc::new(to_write.schema().as_ref().try_into().unwrap()),
+            file_io.clone(),
+            location_gen,
+            file_name_gen,
+        )
+        .build()
+        .await?;
+
+        pw.write(&to_write).await?;
+        let res = pw.close().await?;
+        assert_eq!(res.len(), 1);
+        let data_file = res
+            .into_iter()
+            .next()
+            .unwrap()
+            // Put dummy field for build successfully.
+            .content(crate::spec::DataContentType::Data)
+            .partition(Struct::empty())
+            .build()
+            .unwrap();
+
+        // check data file
+        assert_eq!(data_file.record_count(), 4);
+        assert_eq!(
+            *data_file.value_counts(),
+            HashMap::from([(0, 4), (1, 4)])
+        );
+        assert_eq!(
+            *data_file.lower_bounds(),
+            HashMap::from([
+                (0, Datum::float(1.0)),
+                (1, Datum::double(1.0)),
+            ])
+        );
+        assert_eq!(
+            *data_file.upper_bounds(),
+            HashMap::from([
+                (0, Datum::float(2.0)),
+                (1, Datum::double(2.0)),
+            ])
+        );
+        assert_eq!(
+            *data_file.null_value_counts(),
+            HashMap::from([(0, 0), (1, 0)])
+        );
+        assert_eq!(
+            *data_file.nan_value_counts(),
+            HashMap::from([(0, 1), (1, 1)])
+        );
+
+        // check the written file
+        let expect_batch = concat_batches(&arrow_schema, vec![&to_write]).unwrap();
+        check_parquet_data_file(&file_io, &data_file, &expect_batch).await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_nan_val_cnts_struct_type() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let file_io = FileIOBuilder::new_fs_io().build().unwrap();
         let location_gen =
@@ -1110,12 +1186,6 @@ mod tests {
         // prepare data
         let arrow_schema = {
             let fields = vec![
-                Field::new("col", arrow_schema::DataType::Float32, false).with_metadata(
-                    HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "0".to_string())]),
-                ),
-                Field::new("col2", arrow_schema::DataType::Float64, false).with_metadata(
-                    HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "1".to_string())]),
-                ),
                 Field::new(
                     "col3",
                     arrow_schema::DataType::Struct(schema_struct_float_fields.clone()),
@@ -1143,11 +1213,6 @@ mod tests {
             None,
         )) as ArrayRef;
 
-        let float_64_col = Arc::new(Float64Array::from_iter_values_with_nulls(
-            [1.0_f64, f64::NAN, 2.0, 2.0].into_iter(),
-            None,
-        )) as ArrayRef;
-
         let struct_float_field_col = Arc::new(StructArray::new(
             schema_struct_float_fields,
             vec![float_32_col.clone()],
@@ -1165,8 +1230,6 @@ mod tests {
         )) as ArrayRef;
 
         let to_write = RecordBatch::try_new(arrow_schema.clone(), vec![
-            float_32_col,
-            float_64_col,
             struct_float_field_col,
             struct_nested_float_field_col,
         ])
@@ -1200,13 +1263,11 @@ mod tests {
         assert_eq!(data_file.record_count(), 4);
         assert_eq!(
             *data_file.value_counts(),
-            HashMap::from([(0, 4), (1, 4), (4, 4), (7, 4)])
+            HashMap::from([(4, 4), (7, 4)])
         );
         assert_eq!(
             *data_file.lower_bounds(),
             HashMap::from([
-                (0, Datum::float(1.0)),
-                (1, Datum::double(1.0)),
                 (4, Datum::float(1.0)),
                 (7, Datum::float(1.0)),
             ])
@@ -1214,19 +1275,17 @@ mod tests {
         assert_eq!(
             *data_file.upper_bounds(),
             HashMap::from([
-                (0, Datum::float(2.0)),
-                (1, Datum::double(2.0)),
                 (4, Datum::float(2.0)),
                 (7, Datum::float(2.0)),
             ])
         );
         assert_eq!(
             *data_file.null_value_counts(),
-            HashMap::from([(0, 0), (1, 0), (4, 0), (7, 0)])
+            HashMap::from([(4, 0), (7, 0)])
         );
         assert_eq!(
             *data_file.nan_value_counts(),
-            HashMap::from([(0, 1), (1, 1), (4, 1), (7, 1)])
+            HashMap::from([(4, 1), (7, 1)])
         );
 
         // check the written file
