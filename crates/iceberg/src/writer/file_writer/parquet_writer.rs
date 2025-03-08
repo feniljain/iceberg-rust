@@ -389,7 +389,7 @@ macro_rules! handle_list_type {
                         _ => unreachable!(),
                     };
 
-                    $self.transverse(&arr_ref, &field);
+                    $self.transverse_batch(&arr_ref, &field);
                 }
             }
             _ => {}
@@ -593,43 +593,7 @@ impl ParquetWriter {
         Ok(builder)
     }
 
-    // fn handle_list_type(&mut self, field: &NestedFieldRef, field_data_typ: DataType) {
-    //     let n_vals = list_arr.offsets().len() - 1;
-    //
-    //     let field = match field.clone().field_type.deref() {
-    //         Type::List(list_typ) => list_typ.element_field.clone(),
-    //         _ => unreachable!(),
-    //     };
-    //     let field_id = field.id;
-    //
-    //     match field_data_typ {
-    //         DataType::Float32 => {
-    //             for idx in 0..n_vals {
-    //                 let arr_ref = list_arr.value(idx);
-    //                 count_float_nans!(Float32Array, arr_ref, self, field_id);
-    //             }
-    //         }
-    //         DataType::Float64 => {
-    //             for idx in 0..n_vals {
-    //                 let arr_ref = list_arr.value(idx);
-    //                 count_float_nans!(Float64Array, arr_ref, self, field_id);
-    //             }
-    //         }
-    //         DataType::List(_)
-    //         | DataType::LargeList(_)
-    //         | DataType::FixedSizeList(_, _)
-    //         | DataType::Struct(_)
-    //         | DataType::Map(_, _) => {
-    //             for idx in 0..n_vals {
-    //                 let arr_ref = list_arr.value(idx);
-    //                 self.transverse(&arr_ref, &field);
-    //             }
-    //         }
-    //         _ => {}
-    //     };
-    // }
-
-    fn transverse(&mut self, col: &ArrayRef, field: &NestedFieldRef) {
+    fn transverse_batch(&mut self, col: &ArrayRef, field: &NestedFieldRef) {
         let dt = col.data_type();
 
         match dt {
@@ -677,7 +641,7 @@ impl ParquetWriter {
                                 _ => unreachable!(),
                             };
 
-                            self.transverse(arr_ref, &field);
+                            self.transverse_batch(arr_ref, &field);
                         }
                         _ => {}
                     };
@@ -703,10 +667,10 @@ impl ParquetWriter {
                 };
 
                 let keys_col = map_arr.keys();
-                self.transverse(keys_col, &map_ty.key_field);
+                self.transverse_batch(keys_col, &map_ty.key_field);
 
                 let values_col = map_arr.values();
-                self.transverse(values_col, &map_ty.value_field);
+                self.transverse_batch(values_col, &map_ty.value_field);
             }
             _ => {}
         };
@@ -721,7 +685,7 @@ impl FileWriter for ParquetWriter {
         let fields = schema_c.as_struct().fields();
 
         for (col, field) in batch.columns().iter().zip(fields) {
-            self.transverse(col, field);
+            self.transverse_batch(col, field);
         }
 
         self.writer.write(batch).await.map_err(|err| {
