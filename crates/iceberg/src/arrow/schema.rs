@@ -1440,26 +1440,29 @@ mod tests {
 
     #[test]
     fn test_arrow_schema_convert_for_large_list() {
-        let schema_large_list_float_field = Field::new("col1", DataType::Float32, true).with_metadata(
-            HashMap::from([(PARQUET_FIELD_ID_META_KEY.to_string(), "1".to_string())]),
-        );
-
-        let arrow_schema = {
-            let fields = vec![Field::new_large_list(
-                "col0",
-                schema_large_list_float_field.clone(),
-                true,
-            )
+        let schema_large_list_float_field = Field::new("col1", DataType::Float32, true)
             .with_metadata(HashMap::from([(
                 PARQUET_FIELD_ID_META_KEY.to_string(),
-                "0".to_string(),
-            )]))];
+                "1".to_string(),
+            )]));
+
+        let arrow_schema = {
+            let fields =
+                vec![
+                    Field::new_large_list("col0", schema_large_list_float_field.clone(), true)
+                        .with_metadata(HashMap::from([(
+                            PARQUET_FIELD_ID_META_KEY.to_string(),
+                            "0".to_string(),
+                        )])),
+                ];
             Arc::new(arrow_schema::Schema::new(fields))
         };
 
-        let converted_iceberg_schema = arrow_schema_to_schema(&arrow_schema).expect("Could not convert to iceberg schema");
+        let converted_iceberg_schema =
+            arrow_schema_to_schema(&arrow_schema).expect("Could not convert to iceberg schema");
 
-        let converted_arrow_schema = schema_to_arrow_schema(&converted_iceberg_schema).expect("Could not convert to arrow schema");
+        let converted_arrow_schema = schema_to_arrow_schema(&converted_iceberg_schema)
+            .expect("Could not convert to arrow schema");
 
         if let DataType::LargeList(_) = converted_arrow_schema.field(0).data_type() {
             assert!(true);
